@@ -18,11 +18,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            x11vnc xvfb \
-            novnc websockify \
-            libpulse0 pulseaudio \
-            libnss3 libglu1-mesa \
-            openjdk-17-jdk wget unzip
+            x11vnc xvfb novnc websockify \
+            libpulse0 openjdk-17-jdk wget unzip
 
       - name: Setup Android SDK
         run: |
@@ -31,37 +28,43 @@ jobs:
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
           unzip -q commandlinetools-linux-11076708_latest.zip
           mv cmdline-tools latest
-          echo "export ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
-          echo "export PATH=$PATH:$HOME/android-sdk/cmdline-tools/latest/bin:$HOME/android-sdk/platform-tools:$HOME/android-sdk/emulator" >> $GITHUB_ENV
 
-      - name: Install Emulator
+      - name: Install Emulator and System Image
         run: |
           export ANDROID_HOME=$HOME/android-sdk
+          export ANDROID_SDK_ROOT=$HOME/android-sdk
           export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
           yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "emulator"
+          sdkmanager "platform-tools"
+          sdkmanager "emulator"
           sdkmanager "system-images;android-28;default;x86"
 
       - name: Create AVD
         run: |
           export ANDROID_HOME=$HOME/android-sdk
-          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator
+          export ANDROID_SDK_ROOT=$HOME/android-sdk
+          export ANDROID_AVD_HOME=$HOME/.android/avd
+          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
+          mkdir -p $HOME/.android/avd
           echo "no" | avdmanager create avd \
             --force \
-            --name test \
+            --name "test" \
             --abi default/x86 \
             --package "system-images;android-28;default;x86" \
             --device "Nexus 6"
+          echo "AVD List:"
+          avdmanager list avd
 
       - name: Start Xvfb
         run: |
           Xvfb :1 -screen 0 1280x720x24 &
-          echo "DISPLAY=:1" >> $GITHUB_ENV
-          sleep 3
+          sleep 5
 
       - name: Start Emulator
         run: |
           export ANDROID_HOME=$HOME/android-sdk
+          export ANDROID_SDK_ROOT=$HOME/android-sdk
+          export ANDROID_AVD_HOME=$HOME/.android/avd
           export PATH=$PATH:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools
           export DISPLAY=:1
           emulator -avd test \
@@ -69,34 +72,27 @@ jobs:
             -no-snapshot \
             -no-boot-anim \
             -gpu swiftshader_indirect \
-            -skin 1080x1920 &
-          echo "Waiting for emulator to boot..."
-          adb wait-for-device
-          until adb shell getprop sys.boot_completed 2>/dev/null | grep -m 1 '1'; do
-            sleep 5
-            echo "Still booting..."
-          done
-          echo "Emulator booted!"
+            -no-window &
+          echo "Waiting for emulator..."
+          sleep 30
+          adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 3; done'
+          echo "Emulator is ready!"
 
-      - name: Start VNC
+      - name: Start VNC and ngrok
         run: |
           export DISPLAY=:1
-          x11vnc -display :1 -nopw -listen 0.0.0.0 -xkb -forever -shared &
+          x11vnc -display :1 -nopw -listen 0.0.0.0 -forever -shared &
           sleep 3
           websockify --web=/usr/share/novnc 6080 localhost:5900 &
           sleep 3
-          echo "VNC started on port 6080"
-
-      - name: Start ngrok
-        run: |
           wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
           tar -xf ngrok-v3-stable-linux-amd64.tgz
           ./ngrok config add-authtoken 2XANxc8HcuJepVSCc5a8t8fACPB_6d1uW3nMny8rNeNFT9fdE
           ./ngrok http 6080 &
           sleep 15
-          echo "===== YOUR ACCESS URL BELOW ====="
+          echo "========= ACCESS URL ========="
           curl -s http://localhost:4040/api/tunnels | grep -o 'https://[^"]*'
-          echo "================================="
+          echo "=============================="
 
       - name: Keep Alive
         run: sleep 3600
