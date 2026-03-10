@@ -14,10 +14,14 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Install VNC and noVNC
+      - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y x11vnc novnc xvfb
+          sudo apt-get install -y \
+            x11vnc novnc xvfb \
+            libpulse0 pulseaudio \
+            libnss3 libglu1-mesa \
+            wget curl
 
       - name: Setup Android Emulator
         uses: reactivecircus/android-emulator-runner@v2
@@ -25,23 +29,26 @@ jobs:
           api-level: 29
           arch: x86_64
           profile: Nexus 6
-          emulator-options: -no-audio -no-snapshot -gpu swiftshader_indirect
+          emulator-options: -no-audio -no-snapshot -gpu swiftshader_indirect -no-boot-anim
+          disable-animations: true
           script: |
-            echo "Emulator started!"
+            echo "Emulator booted successfully!"
             Xvfb :1 -screen 0 1280x720x24 &
-            DISPLAY=:1 x11vnc -display :1 -nopw -listen 0.0.0.0 -xkb &
+            sleep 2
+            DISPLAY=:1 x11vnc -display :1 -nopw -listen 0.0.0.0 -xkb -forever &
+            sleep 2
             websockify --web /usr/share/novnc 6080 localhost:5900 &
-            echo "noVNC started! Now setup ngrok..."
-            
-      - name: Setup ngrok tunnel
+            sleep 2
+            echo "VNC Ready!"
+
+      - name: Start ngrok
         run: |
-          curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc
-          curl -O https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
+          wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
           tar -xf ngrok-v3-stable-linux-amd64.tgz
           ./ngrok config add-authtoken 2XANxc8HcuJepVSCc5a8t8fACPB_6d1uW3nMny8rNeNFT9fdE
           ./ngrok http 6080 &
-          sleep 10
-          curl http://localhost:4040/api/tunnels
+          sleep 15
+          curl -s http://localhost:4040/api/tunnels | grep -o 'https://[^"]*'
 
-      - name: Keep alive
+      - name: Keep Alive
         run: sleep 3600
