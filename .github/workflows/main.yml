@@ -6,6 +6,7 @@ on:
 jobs:
   android:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Enable KVM
         run: |
@@ -13,10 +14,34 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Install VNC and noVNC
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y x11vnc novnc xvfb
+
       - name: Setup Android Emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 29
           arch: x86_64
           profile: Nexus 6
-          script: echo "Emulator started!"
+          emulator-options: -no-audio -no-snapshot -gpu swiftshader_indirect
+          script: |
+            echo "Emulator started!"
+            Xvfb :1 -screen 0 1280x720x24 &
+            DISPLAY=:1 x11vnc -display :1 -nopw -listen 0.0.0.0 -xkb &
+            websockify --web /usr/share/novnc 6080 localhost:5900 &
+            echo "noVNC started! Now setup ngrok..."
+            
+      - name: Setup ngrok tunnel
+        run: |
+          curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc
+          curl -O https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
+          tar -xf ngrok-v3-stable-linux-amd64.tgz
+          ./ngrok config add-authtoken 2XANxc8HcuJepVSCc5a8t8fACPB_6d1uW3nMny8rNeNFT9fdE
+          ./ngrok http 6080 &
+          sleep 10
+          curl http://localhost:4040/api/tunnels
+
+      - name: Keep alive
+        run: sleep 3600
