@@ -37,7 +37,7 @@ jobs:
           wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
           tar -xf ngrok-v3-stable-linux-amd64.tgz
           ./ngrok config add-authtoken 2XANxc8HcuJepVSCc5a8t8fACPB_6d1uW3nMny8rNeNFT9fdE
-          ./ngrok http 6080 &
+          ./ngrok tcp 5900 &
           sleep 15
           echo "========= ACCESS URL ========="
           curl -s http://localhost:4040/api/tunnels | grep -o 'https://[^"]*'
