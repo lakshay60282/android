@@ -18,28 +18,74 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            x11vnc novnc xvfb \
+            x11vnc xvfb \
+            novnc websockify \
             libpulse0 pulseaudio \
             libnss3 libglu1-mesa \
-            wget curl
+            openjdk-17-jdk wget unzip
 
-      - name: Setup Android Emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 29
-          arch: x86_64
-          profile: Nexus 6
-          emulator-options: -no-audio -no-snapshot -gpu swiftshader_indirect -no-boot-anim
-          disable-animations: true
-          script: |
-            echo "Emulator booted successfully!"
-            Xvfb :1 -screen 0 1280x720x24 &
-            sleep 2
-            DISPLAY=:1 x11vnc -display :1 -nopw -listen 0.0.0.0 -xkb -forever &
-            sleep 2
-            websockify --web /usr/share/novnc 6080 localhost:5900 &
-            sleep 2
-            echo "VNC Ready!"
+      - name: Setup Android SDK
+        run: |
+          mkdir -p $HOME/android-sdk/cmdline-tools
+          cd $HOME/android-sdk/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-11076708_latest.zip
+          mv cmdline-tools latest
+          echo "export ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "export PATH=$PATH:$HOME/android-sdk/cmdline-tools/latest/bin:$HOME/android-sdk/platform-tools:$HOME/android-sdk/emulator" >> $GITHUB_ENV
+
+      - name: Install Emulator
+        run: |
+          export ANDROID_HOME=$HOME/android-sdk
+          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "emulator"
+          sdkmanager "system-images;android-28;default;x86"
+
+      - name: Create AVD
+        run: |
+          export ANDROID_HOME=$HOME/android-sdk
+          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator
+          echo "no" | avdmanager create avd \
+            --force \
+            --name test \
+            --abi default/x86 \
+            --package "system-images;android-28;default;x86" \
+            --device "Nexus 6"
+
+      - name: Start Xvfb
+        run: |
+          Xvfb :1 -screen 0 1280x720x24 &
+          echo "DISPLAY=:1" >> $GITHUB_ENV
+          sleep 3
+
+      - name: Start Emulator
+        run: |
+          export ANDROID_HOME=$HOME/android-sdk
+          export PATH=$PATH:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools
+          export DISPLAY=:1
+          emulator -avd test \
+            -no-audio \
+            -no-snapshot \
+            -no-boot-anim \
+            -gpu swiftshader_indirect \
+            -skin 1080x1920 &
+          echo "Waiting for emulator to boot..."
+          adb wait-for-device
+          until adb shell getprop sys.boot_completed 2>/dev/null | grep -m 1 '1'; do
+            sleep 5
+            echo "Still booting..."
+          done
+          echo "Emulator booted!"
+
+      - name: Start VNC
+        run: |
+          export DISPLAY=:1
+          x11vnc -display :1 -nopw -listen 0.0.0.0 -xkb -forever -shared &
+          sleep 3
+          websockify --web=/usr/share/novnc 6080 localhost:5900 &
+          sleep 3
+          echo "VNC started on port 6080"
 
       - name: Start ngrok
         run: |
@@ -48,7 +94,9 @@ jobs:
           ./ngrok config add-authtoken 2XANxc8HcuJepVSCc5a8t8fACPB_6d1uW3nMny8rNeNFT9fdE
           ./ngrok http 6080 &
           sleep 15
+          echo "===== YOUR ACCESS URL BELOW ====="
           curl -s http://localhost:4040/api/tunnels | grep -o 'https://[^"]*'
+          echo "================================="
 
       - name: Keep Alive
         run: sleep 3600
