@@ -39,9 +39,11 @@ jobs:
           ./ngrok config add-authtoken 2XANxc8HcuJepVSCc5a8t8fACPB_6d1uW3nMny8rNeNFT9fdE
           ./ngrok tcp 5900 &
           sleep 15
-          echo "========= ACCESS URL ========="
-          curl -s http://localhost:4040/api/tunnels | grep -o 'https://[^"]*'
-          echo "=============================="
+          echo "========= BROWSER ACCESS ========="
+          curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*' | grep -o 'https://[^"]*'
+          echo "========= VNC VIEWER ACCESS ========="
+          curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*' | grep -o 'tcp://[^"]*'
+          echo "===================================="
 
       - name: Keep Alive
         run: sleep 3600
