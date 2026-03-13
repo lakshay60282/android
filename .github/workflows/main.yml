@@ -38,13 +38,13 @@ jobs:
 
       - name: Start ngrok and print URL
         run: |
-          wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
-          tar -xf ngrok-v3-stable-linux-amd64.tgz
-          ./ngrok config add-authtoken 2XANxc8HcuJepVSCc5a8t8fACPB_6d1uW3nMny8rNeNFT9fdE
-          ./ngrok http 6080 &
-          sleep 20
+          websockify --web=/usr/share/novnc 6080 localhost:5900 &
+          sleep 3
           echo "========= ACCESS URL ========="
-          curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url'
+          ssh -o StrictHostKeyChecking=no \
+            -R 80:localhost:6080 \
+            nokey@localhost.run 2>&1 | grep -o 'https://[^ ]*' &
+          sleep 10
           echo "=============================="
 
       - name: Keep Alive
