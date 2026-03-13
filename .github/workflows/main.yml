@@ -8,34 +8,74 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Install Desktop and Dependencies
+      - name: Install Everything
         run: |
           sudo apt-get update -q
           sudo apt-get install -y \
             xfce4 xfce4-terminal \
+            xfce4-taskmanager \
             x11vnc xvfb \
             novnc websockify \
-            wget curl openssh-client
+            dbus-x11 \
+            curl openssh-client \
+            --no-install-recommends
 
-      - name: Start Everything and Get URL
+      - name: Start Everything
         run: |
-          Xvfb :1 -screen 0 1280x720x24 &
-          sleep 2
-          DISPLAY=:1 startxfce4 &
+          # Start display
+          Xvfb :1 -screen 0 1280x720x24 -ac &
           sleep 3
-          DISPLAY=:1 x11vnc -display :1 -nopw \
-            -listen 0.0.0.0 -forever -shared &
+          
+          # Fix dbus error
+          export DISPLAY=:1
+          export DBUS_SESSION_BUS_ADDRESS=$(dbus-launch --sh-syntax | grep DBUS_SESSION_BUS_ADDRESS | cut -d= -f2-)
+          
+          # Start desktop
+          DISPLAY=:1 xfce4-session &
+          sleep 5
+          
+          # Start VNC on port 5900 with password
+          x11vnc -display :1 \
+            -passwd mypassword \
+            -listen 0.0.0.0 \
+            -forever \
+            -shared \
+            -noxdamage &
           sleep 2
-          websockify --web=/usr/share/novnc 6080 localhost:5900 &
-          sleep 3
-          echo "========= ACCESS URL ========="
+          
+          # Start noVNC for browser access
+          websockify --web=/usr/share/novnc \
+            6080 localhost:5900 &
+          sleep 2
+          
+          # Start localhost.run tunnel for browser
           ssh -o StrictHostKeyChecking=no \
-            -o ServerAliveInterval=60 \
+            -o ServerAliveInterval=30 \
             -R 80:localhost:6080 \
-            nokey@localhost.run 2>&1 | tee /tmp/url.txt &
+            nokey@localhost.run > /tmp/tunnel.txt 2>&1 &
           sleep 15
-          cat /tmp/url.txt | grep -o 'https://[^ ]*'
-          echo "=============================="
+          
+          echo "========= BROWSER ACCESS URL ========="
+          grep -o 'https://[^ ]*\.lhr\.life' /tmp/tunnel.txt | head -1
+          echo "Password: mypassword"
+          echo "======================================="
 
       - name: Keep Alive
-        run: sleep 3600
+        run: |
+          echo "Desktop is running!"
+          echo "Open the URL above in browser"
+          echo "Then click vnc.html and enter password: mypassword"
+          sleep 3600
+
+      - name: TCP Tunnel for VNC Viewer App
+        run: |
+          ssh -o StrictHostKeyChecking=no \
+            -o ServerAliveInterval=30 \
+            -R 5900:localhost:5900 \
+            nokey@localhost.run > /tmp/vnc.txt 2>&1 &
+          sleep 15
+          echo "========= VNC VIEWER ADDRESS ========="
+          cat /tmp/vnc.txt | grep -o '[a-z0-9]*\.lhr\.life'
+          echo "Port: 5900"
+          echo "Password: mypassword"
+          echo "======================================"
