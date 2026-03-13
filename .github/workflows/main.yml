@@ -12,34 +12,31 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y \
-            xfce4 xfce4-terminal \
-            dbus-x11 x11vnc xvfb \
+            openbox obconf \
+            x11vnc xvfb \
             curl openssh-client \
+            xterm \
             --no-install-recommends
-          
+
           # Install latest noVNC
           cd /opt
-          sudo git clone https://github.com/novnc/noVNC.git
-          sudo git clone https://github.com/novnc/websockify.git
-          cd /opt/noVNC/utils
+          sudo git clone --depth 1 https://github.com/novnc/noVNC.git
+          sudo git clone --depth 1 https://github.com/novnc/websockify.git
           sudo ln -s /opt/websockify /opt/noVNC/utils/websockify
 
-      - name: Start Desktop and Services
+      - name: Start Desktop
         run: |
           # Start display
-          Xvfb :1 -screen 0 1280x720x24 -ac &
+          Xvfb :1 -screen 0 1024x768x16 -ac +extension GLX &
           sleep 3
-          
-          # Fix dbus
+
           export DISPLAY=:1
-          eval $(dbus-launch --sh-syntax)
-          export DBUS_SESSION_BUS_ADDRESS
-          
-          # Start XFCE desktop
-          DISPLAY=:1 xfce4-session &
-          sleep 6
-          
-          # Start VNC with password
+
+          # Start lightweight openbox
+          DISPLAY=:1 openbox-session &
+          sleep 4
+
+          # Start VNC optimized for low lag
           x11vnc \
             -display :1 \
             -passwd desktop123 \
@@ -47,48 +44,62 @@ jobs:
             -forever \
             -shared \
             -noxdamage \
-            -noxfixes &
+            -noxfixes \
+            -noncache \
+            -speeds modem \
+            -compress 6 \
+            -quality 5 \
+            -threads &
           sleep 3
-          
-          echo "VNC started on port 5900"
+          echo "VNC started!"
 
       - name: Start noVNC
         run: |
-          # Start noVNC with correct host parameter
           /opt/noVNC/utils/novnc_proxy \
             --vnc localhost:5900 \
             --listen 6080 &
           sleep 5
-          echo "noVNC started on port 6080"
+          echo "noVNC started!"
 
-      - name: Start Tunnels
+      - name: Start Serveo Tunnels
         run: |
-          # Browser tunnel
+          # HTTP tunnel for browser noVNC
           ssh -o StrictHostKeyChecking=no \
-            -o ServerAliveInterval=30 \
-            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=20 \
+            -o ServerAliveCountMax=3 \
+            -o ConnectTimeout=15 \
             -R 80:localhost:6080 \
-            nokey@localhost.run > /tmp/browser.txt 2>&1 &
-          
-          # VNC Viewer tunnel  
+            serveo.net > /tmp/http.txt 2>&1 &
+
+          # TCP tunnel for VNC Viewer app
           ssh -o StrictHostKeyChecking=no \
-            -o ServerAliveInterval=30 \
-            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=20 \
+            -o ServerAliveCountMax=3 \
+            -o ConnectTimeout=15 \
             -R 5900:localhost:5900 \
-            nokey@localhost.run > /tmp/vnc.txt 2>&1 &
-          
-          sleep 20
-          
+            serveo.net > /tmp/tcp.txt 2>&1 &
+
+          sleep 25
+
           echo "========= BROWSER ACCESS ========="
-          grep -o 'https://[^ ]*\.lhr\.life' /tmp/browser.txt | head -1
-          echo "Open URL then go to vnc_auto.html"
+          HTTP=$(grep -o 'https://[^ ]*\.serveo\.net' /tmp/http.txt | head -1)
+          echo "$HTTP/vnc_auto.html"
           echo "Password: desktop123"
           echo ""
           echo "========= VNC VIEWER APP ========="
-          grep -o '[a-z0-9]*\.lhr\.life' /tmp/vnc.txt | head -1
+          TCP=$(grep -o '[a-z0-9]*\.serveo\.net' /tmp/tcp.txt | head -1)
+          echo "Host: $TCP"
           echo "Port: 5900"
           echo "Password: desktop123"
           echo "=================================="
 
+          # Save URLs to file for reference
+          echo "$HTTP/vnc_auto.html" > /tmp/urls.txt
+          echo "$TCP:5900" >> /tmp/urls.txt
+          cat /tmp/urls.txt
+
       - name: Keep Alive
-        run: sleep 3300
+        run: |
+          echo "Everything is running!"
+          echo "Check Start Serveo Tunnels step for URLs"
+          sleep 3300
