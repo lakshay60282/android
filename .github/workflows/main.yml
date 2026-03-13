@@ -13,69 +13,82 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y \
             xfce4 xfce4-terminal \
-            xfce4-taskmanager \
-            x11vnc xvfb \
-            novnc websockify \
-            dbus-x11 \
+            dbus-x11 x11vnc xvfb \
             curl openssh-client \
             --no-install-recommends
+          
+          # Install latest noVNC
+          cd /opt
+          sudo git clone https://github.com/novnc/noVNC.git
+          sudo git clone https://github.com/novnc/websockify.git
+          cd /opt/noVNC/utils
+          sudo ln -s /opt/websockify /opt/noVNC/utils/websockify
 
-      - name: Start Everything
+      - name: Start Desktop and Services
         run: |
           # Start display
           Xvfb :1 -screen 0 1280x720x24 -ac &
           sleep 3
           
-          # Fix dbus error
+          # Fix dbus
           export DISPLAY=:1
-          export DBUS_SESSION_BUS_ADDRESS=$(dbus-launch --sh-syntax | grep DBUS_SESSION_BUS_ADDRESS | cut -d= -f2-)
+          eval $(dbus-launch --sh-syntax)
+          export DBUS_SESSION_BUS_ADDRESS
           
-          # Start desktop
+          # Start XFCE desktop
           DISPLAY=:1 xfce4-session &
-          sleep 5
+          sleep 6
           
-          # Start VNC on port 5900 with password
-          x11vnc -display :1 \
-            -passwd mypassword \
+          # Start VNC with password
+          x11vnc \
+            -display :1 \
+            -passwd desktop123 \
             -listen 0.0.0.0 \
             -forever \
             -shared \
-            -noxdamage &
-          sleep 2
+            -noxdamage \
+            -noxfixes &
+          sleep 3
           
-          # Start noVNC for browser access
-          websockify --web=/usr/share/novnc \
-            6080 localhost:5900 &
-          sleep 2
-          
-          # Start localhost.run tunnel for browser
+          echo "VNC started on port 5900"
+
+      - name: Start noVNC
+        run: |
+          # Start noVNC with correct host parameter
+          /opt/noVNC/utils/novnc_proxy \
+            --vnc localhost:5900 \
+            --listen 6080 &
+          sleep 5
+          echo "noVNC started on port 6080"
+
+      - name: Start Tunnels
+        run: |
+          # Browser tunnel
           ssh -o StrictHostKeyChecking=no \
             -o ServerAliveInterval=30 \
+            -o ConnectTimeout=10 \
             -R 80:localhost:6080 \
-            nokey@localhost.run > /tmp/tunnel.txt 2>&1 &
-          sleep 15
+            nokey@localhost.run > /tmp/browser.txt 2>&1 &
           
-          echo "========= BROWSER ACCESS URL ========="
-          grep -o 'https://[^ ]*\.lhr\.life' /tmp/tunnel.txt | head -1
-          echo "Password: mypassword"
-          echo "======================================="
-
-      - name: Keep Alive
-        run: |
-          echo "Desktop is running!"
-          echo "Open the URL above in browser"
-          echo "Then click vnc.html and enter password: mypassword"
-          sleep 3600
-
-      - name: TCP Tunnel for VNC Viewer App
-        run: |
+          # VNC Viewer tunnel  
           ssh -o StrictHostKeyChecking=no \
             -o ServerAliveInterval=30 \
+            -o ConnectTimeout=10 \
             -R 5900:localhost:5900 \
             nokey@localhost.run > /tmp/vnc.txt 2>&1 &
-          sleep 15
-          echo "========= VNC VIEWER ADDRESS ========="
-          cat /tmp/vnc.txt | grep -o '[a-z0-9]*\.lhr\.life'
+          
+          sleep 20
+          
+          echo "========= BROWSER ACCESS ========="
+          grep -o 'https://[^ ]*\.lhr\.life' /tmp/browser.txt | head -1
+          echo "Open URL then go to vnc_auto.html"
+          echo "Password: desktop123"
+          echo ""
+          echo "========= VNC VIEWER APP ========="
+          grep -o '[a-z0-9]*\.lhr\.life' /tmp/vnc.txt | head -1
           echo "Port: 5900"
-          echo "Password: mypassword"
-          echo "======================================"
+          echo "Password: desktop123"
+          echo "=================================="
+
+      - name: Keep Alive
+        run: sleep 3300
